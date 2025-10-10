@@ -220,7 +220,7 @@ ds_out = xr.Dataset(
     {
         "obs": (("time", "lat", "lon"), obs_daily),
         "model": (("time", "lat", "lon"), model_daily),
-        "corrected": (("time", "lat", "lon"), corr_daily)
+        "corrected": (("time", "lat", "lon"), corr_daily),
         "counts": (("time", "lat", "lon"), count_daily)
     },
     coords={
