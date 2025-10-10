@@ -41,8 +41,8 @@ def plot_annual_counts(ds_daily, year, outdir):
     gl = ax.gridlines(draw_labels=True, linewidth=0.5, color='gray', alpha=0.5, linestyle='--')
     gl.top_labels = gl.right_labels = False
 
-    im = ax.pcolormesh(lon, lat, annual_counts.values, cmap='viridis', transform=ccrs.PlateCarree())
-    ax.set_title(f'{year} Annual Observation Counts')
+    im = ax.pcolormesh(lon, lat, annual_counts.values, cmap='Reds', transform=ccrs.PlateCarree())
+    ax.set_title(f'{year} Annual Observation Counts, Mean {np.nanmean(annual_counts):.2f}')
     plt.colorbar(im, ax=ax, shrink=0.6, pad=0.01, label='Number of observations')
 
     filename = os.path.join(outdir, f'{year}_annual_counts.png')
