@@ -34,7 +34,8 @@ def plot_all_emission_variables(emis_dir, year):
             total_emis_all = ds['EmisCO2_Total']
             if 'lev' in total_emis_all.dims:
                 total_emis_all = total_emis_all.sum(dim='lev', skipna=True)
-            total_emis_all = float(total_emis_all.sum(dim=('time','lat','lon')).compute())
+            # SUM over time + lat + lon for total yearly emissions
+            total_emis_all = float(total_emis_all.mean(dim='time').sum(dim=('lat','lon')).compute())
 
         for varname in emis_vars:
             print(f"Processing {varname}...")
@@ -81,7 +82,7 @@ def plot_all_emission_variables(emis_dir, year):
             im = ax.pcolormesh(lon, lat, emis_plot, cmap=cmap, norm=norm, transform=ccrs.PlateCarree())
             plt.colorbar(im, ax=ax, shrink=0.6, pad=0.02, label="CO₂ emissions [kg m⁻² s⁻¹]")
 
-            # Total emissions and percentage
+            # Total emissions and percentage — SUM over time + lat + lon
             total_emis = float(emis_mean.sum(dim=('lat','lon')).compute())
             perc_str = ""
             if total_emis_all is not None:
