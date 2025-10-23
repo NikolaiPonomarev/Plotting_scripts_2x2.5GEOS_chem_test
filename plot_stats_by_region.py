@@ -4,6 +4,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import cartopy.io.shapereader as shpreader
 from shapely.geometry import Point
+import matplotlib.patches as mpatches
 
 # ----------------------
 # Load dataset
@@ -348,12 +349,21 @@ def taylor_diagram(all_stats, years, colors, filename, comparison='Model vs Obs'
             ax.plot(angle, r, 'o', color=colors[k], label=name if i==0 else "")
 
     # Correlation ticks on theta
-    theta_ticks = np.radians(np.linspace(0, 90, 7))  # 0° → 90°
-    corr_labels = [f"{np.cos(t):.2f}" for t in theta_ticks]
+    theta_ticks = np.radians(np.linspace(0, 90, 7)) # 0° → 90°
+    corr_labels = [f"{np.cos(t):.2f}" for t in theta_ticks][::-1] 
+    print(theta_ticks, corr_labels)
     ax.set_xticks(theta_ticks)
     ax.set_xticklabels(corr_labels)
-    ax.set_xlabel("Correlation")
-
+    ax.text(
+        np.pi/5,                # angle along the circle (adjust if needed)
+        ax.get_rmax()*1.02,     # slightly closer to the circle center to move down
+        "Correlation", 
+        ha='center', 
+        va='center', 
+        fontsize=12,
+        rotation=-30            # clockwise rotation in degrees
+    )
+    ax.set_xlabel('Standard deviation')
     ax.set_ylim(0, 1.5)
     ax.set_rlabel_position(135)
     ax.set_title(f'Taylor Diagram ({comparison})', fontsize=14)
@@ -364,7 +374,7 @@ def taylor_diagram(all_stats, years, colors, filename, comparison='Model vs Obs'
     ax.legend(handles=handles, title='Region', loc='upper right', bbox_to_anchor=(1, 1))
 
     # Adjust spacing
-    plt.subplots_adjust(top=0.95, bottom=0.05, left=0.05, right=0.95)
+    plt.subplots_adjust(top=0.90, bottom=0.05, left=0.05, right=0.95)
     plt.savefig(filename, dpi=300)
     plt.close(fig)
 
