@@ -53,12 +53,12 @@ regions = {
     'Polar': polar_mask
 }
 
-# ----------------------
+# ---------------------- 
 # Functions to compute stats
 # ----------------------
 
 def annual_stats(ds_obs, ds_model, ds_corrected, mask):
-    """Compute annual bias, rmse, crmse (from daily values), and mean for boxplots of obs, model, corrected."""
+    """Compute annual bias, rmse, crmse (from daily values), mean, and std for boxplots of obs, model, corrected."""
     obs_masked = ds_obs.where(mask)
     model_masked = ds_model.where(mask)
     corrected_masked = ds_corrected.where(mask)
@@ -67,6 +67,7 @@ def annual_stats(ds_obs, ds_model, ds_corrected, mask):
     bias_list, rmse_list, crmse_list = [], [], []
     bias_list_corr, rmse_list_corr, crmse_list_corr = [], [], []
     mean_obs_list, mean_model_list, mean_corr_list = [], [], []
+    std_obs_list, std_model_list, std_corr_list = [], [], []
 
     for y in years:
         obs_year = obs_masked.sel(time=ds_obs['time.year']==y)
@@ -85,6 +86,9 @@ def annual_stats(ds_obs, ds_model, ds_corrected, mask):
             mean_obs_list.append([])
             mean_model_list.append([])
             mean_corr_list.append([])
+            std_obs_list.append(np.nan)
+            std_model_list.append(np.nan)
+            std_corr_list.append(np.nan)
             continue
         
         diff = model_flat[valid] - obs_flat[valid]
@@ -101,10 +105,14 @@ def annual_stats(ds_obs, ds_model, ds_corrected, mask):
         mean_obs_list.append(obs_flat[valid])
         mean_model_list.append(model_flat[valid])
         mean_corr_list.append(corr_flat[valid])
+        std_obs_list.append(np.std(obs_flat[valid]))
+        std_model_list.append(np.std(model_flat[valid]))
+        std_corr_list.append(np.std(corr_flat[valid]))
 
     return (np.array(bias_list), np.array(rmse_list), np.array(crmse_list),
             np.array(bias_list_corr), np.array(rmse_list_corr), np.array(crmse_list_corr),
-            mean_obs_list, mean_model_list, mean_corr_list)
+            mean_obs_list, mean_model_list, mean_corr_list,
+            np.array(std_obs_list), np.array(std_model_list), np.array(std_corr_list))
 
 def monthly_correlation(ds_obs, ds_model, mask):
     """Compute monthly correlation within region and average for each year"""
@@ -140,7 +148,8 @@ for name, mask in regions.items():
     # compute annual metrics + spatial means for boxplots
     (bias, rmse, crmse,
      bias_corr, rmse_corr, crmse_corr,
-     mean_obs, mean_model, mean_corr) = annual_stats(
+     mean_obs, mean_model, mean_corr,
+     std_obs, std_model, std_corr) = annual_stats(
         ds['obs'], ds['model'], ds['corrected'], mask
     )
     
@@ -156,13 +165,17 @@ for name, mask in regions.items():
         corr=corr,
         mean_obs=mean_obs,
         mean_model=mean_model,
+        std_obs=std_obs,
+        std_model=std_model,
         # model vs corrected obs
         bias_corr=bias_corr,
         rmse_corr=rmse_corr,
         crmse_corr=crmse_corr,
         corr_corr=corr_corr,
-        mean_corr=mean_corr
+        mean_corr=mean_corr,
+        std_corr=std_corr
     )
+
 
 years = np.unique(ds['time.year'].values)
 n_years = len(years)
@@ -312,12 +325,12 @@ def taylor_diagram(all_stats, years, colors, filename, comparison='Model vs Obs'
     corrs = []
     for name, stats in all_stats.items():
         if 'corrected' in comparison.lower():
-            std_ref = [np.std(obs) for obs in stats['mean_corr']]
-            std_model = [np.std(mod) for mod in stats['mean_model']]
+            std_ref = stats['std_corr']
+            std_model = stats['std_model']
             corr_vals = stats['corr_corr']
         else:
-            std_ref = [np.std(obs) for obs in stats['mean_obs']]
-            std_model = [np.std(mod) for mod in stats['mean_model']]
+            std_ref = stats['std_obs']
+            std_model = stats['std_model']
             corr_vals = stats['corr']
         std_refs.append(std_ref)
         stds.append(std_model)
