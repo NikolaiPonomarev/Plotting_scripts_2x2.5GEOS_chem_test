@@ -210,6 +210,14 @@ def plot_annual_boxplots(all_stats, years, var_name, compare_name,
     fig, axes = plt.subplots(2, 1, figsize=(14, 12), dpi=dpi, sharex=True)
     var_list = [var_name, compare_name]
 
+    # Compute global y-limits
+    all_data = []
+    for var in var_list:
+        for stats in all_stats.values():
+            all_data.extend([np.ravel(x) for x in stats[var]])
+    global_min = np.min([np.min(d) for d in all_data])
+    global_max = np.max([np.max(d) for d in all_data])
+
     for ax, var, title_var in zip(axes, var_list, title_vars):
         for k, (region_name, stats) in enumerate(all_stats.items()):
             data_per_year = [np.ravel(x) for x in stats[var]]
@@ -222,6 +230,7 @@ def plot_annual_boxplots(all_stats, years, var_name, compare_name,
         ax.set_title(title_var)
         ax.set_ylabel('XCO₂ [ppm]')
         ax.grid(True)
+        ax.set_ylim(global_min, global_max)
 
     # x-axis labels
     axes[-1].set_xticks(positions_base)
