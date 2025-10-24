@@ -43,11 +43,13 @@ northern_mid_mask = lat_band_mask(23.5, 60)
 southern_mid_mask = lat_band_mask(-60, -23.5)
 polar_mask = ((lat > 60)[:, None] | (lat < -60)[:, None])
 polar_mask = np.repeat(polar_mask, n_lon, axis=1)
+tropics_land_mask = tropics_mask & land_mask  # combine tropics + land
 
 regions = {
     'Land': land_mask,
     'Ocean': ocean_mask,
     'Tropics': tropics_mask,
+    'Tropics Land': tropics_land_mask,
     'Northern Mid-Latitudes': northern_mid_mask,
     'Southern Mid-Latitudes': southern_mid_mask,
     'Polar': polar_mask
@@ -192,11 +194,11 @@ def plot_annual_boxplots(all_stats, years, var_name, compare_name,
                          dpi=300):
     n_years = len(years)
     n_regions = len(all_stats)
-    width = 0.15
+    width = 0.13
     positions_base = np.arange(n_years)
 
     if regions_colors is None:
-        regions_colors = ['lightblue','orange','green','red','purple','cyan']
+        regions_colors = ['lightblue','orange','green','red','purple','cyan','gold']
 
     # create legend handles
     handles = [mpatches.Patch(facecolor=c, label=name, alpha=0.6)
@@ -254,7 +256,7 @@ def plot_stats_bar(all_stats, years, metrics_keys, titles, colors, filename, com
 
     n_years = len(years)
     n_regions = len(all_stats)
-    width = 0.15  # bar width
+    width = 0.13  # bar width
 
     fig, axes = plt.subplots(len(metrics_keys), 1, figsize=(12,16), dpi=300, sharex=True)
 
@@ -284,7 +286,7 @@ def plot_stats_bar(all_stats, years, metrics_keys, titles, colors, filename, com
 # ----------------------
 metrics_keys_obs = ['bias','rmse','crmse','corr']
 titles = ['Bias [ppm]','RMSE [ppm]','cRMSE [ppm]','Correlation']
-colors = ['lightblue','orange','green','red','purple','cyan']
+colors = ['lightblue','orange','green','red','purple','cyan','gold']
 
 plot_stats_bar(
     all_stats=all_stats,
@@ -392,7 +394,7 @@ def taylor_diagram(all_stats, years, colors, filename, comparison='Model vs Obs'
     plt.close(fig)
 
 
-colors = ['lightblue','orange','green','red','purple','cyan']
+colors = ['lightblue','orange','green','red','purple','cyan','gold']
 
 # Taylor diagram for Model vs Obs
 taylor_diagram(
