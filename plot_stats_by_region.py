@@ -5,6 +5,10 @@ import matplotlib.pyplot as plt
 import cartopy.io.shapereader as shpreader
 from shapely.geometry import Point
 import matplotlib.patches as mpatches
+import rioxarray
+from rasterio.enums import Resampling
+import os
+
 
 # ----------------------
 # Load dataset
@@ -39,21 +43,112 @@ def lat_band_mask(lat_min, lat_max):
     return mask
 
 tropics_mask = lat_band_mask(-23.5, 23.5)
-northern_mid_mask = lat_band_mask(23.5, 60)
-southern_mid_mask = lat_band_mask(-60, -23.5)
-polar_mask = ((lat > 60)[:, None] | (lat < -60)[:, None])
-polar_mask = np.repeat(polar_mask, n_lon, axis=1)
-tropics_land_mask = tropics_mask & land_mask  # combine tropics + land
+# northern_mid_mask = lat_band_mask(23.5, 60)
+# southern_mid_mask = lat_band_mask(-60, -23.5)
+# polar_mask = ((lat > 60)[:, None] | (lat < -60)[:, None])
+# polar_mask = np.repeat(polar_mask, n_lon, axis=1)
+# tropics_land_mask = tropics_mask & land_mask  # combine tropics + land
 
-regions = {
-    'Land': land_mask,
-    'Ocean': ocean_mask,
-    'Tropics': tropics_mask,
-    'Tropics Land': tropics_land_mask,
-    'Northern Mid-Latitudes': northern_mid_mask,
-    'Southern Mid-Latitudes': southern_mid_mask,
-    'Polar': polar_mask
+# regions = {
+#     'Land': land_mask,
+#     'Ocean': ocean_mask,
+#     'Tropics': tropics_mask,
+#     'Tropics Land': tropics_land_mask,
+#     'Northern Mid-Latitudes': northern_mid_mask,
+#     'Southern Mid-Latitudes': southern_mid_mask,
+#     'Polar': polar_mask
+# }
+
+
+
+
+# ----------------------
+# LC based classes
+# ----------------------
+
+# Path to your .tif or .nc file
+
+land_file = "/exports/geos.ed.ac.uk/palmer_group/nponomar/Landuse/CCI4SEN2COR/ESACCI-LC-L4-LCCS-Map-300m-P1Y-2015-v2.0.7.tif"
+land_file_coarse = '/exports/geos.ed.ac.uk/palmer_group/nponomar/Landuse/CCI4SEN2COR/landcover_2x2p5.tif'
+# Open with rioxarray (lazy loading)
+# land = rioxarray.open_rasterio(land_file, chunks={"x": 2048, "y": 2048})
+# print(land)
+
+# Define model grid extent/resolution
+lon_min, lon_max = lon.min(), lon.max()
+lat_min, lat_max = lat.min(), lat.max()
+
+if not os.path.exists(land_file_coarse):
+    command = f'gdalwarp -t_srs EPSG:4326 -tr 2.5 2.0 -r mode \
+    {land_file} {land_file_coarse}'
+    print(command)
+    os.system(command)
+
+# open coarse raster
+land_coarse = rioxarray.open_rasterio(land_file_coarse, chunks='auto')
+print("land_coarse:", land_coarse)
+
+# Align if slightly off-grid
+try:
+    ds.rio.crs
+except MissingCRS:
+    ds = ds.rio.write_crs("EPSG:4326")
+
+# Rename to generic x/y if not already
+ds = ds.rename({'lat': 'y', 'lon': 'x'})  # if your dims are named lat/lon
+
+# Tell rioxarray which dims are spatial
+ds.rio.set_spatial_dims(x_dim='x', y_dim='y', inplace=True)
+
+# Ensure CRS is set
+ds.rio.write_crs("EPSG:4326", inplace=True)
+land_aligned = land_coarse.rio.reproject_match(ds, resampling=Resampling.nearest)
+# ----------------------
+# Define LC class names (matching reclass_map)
+# ----------------------
+
+reclass_map = {
+    10: 6, 20: 6, 30: 6,  # cropland
+    40: 5, 100: 5, 110: 5,  # mosaic vegetation
+    50: 1, 60: 1,           # broadleaf forest
+    70: 2, 80: 2, 90: 2,    # needleleaf / mixed forest
+    120: 3,                 # shrubland
+    130: 4,                 # grassland
+    190: 7,                 # urban
+    200: 9, 220: 9, 140: 9, 150: 9, 160: 9, 170: 9, 180: 9,  # barren/snow/other -> Other
+    210: 8                  # water/ocean
 }
+
+# --- Reclassify LC raster ---
+# Squeeze if needed
+land_2d = land_aligned.squeeze()  # remove band dim if present
+
+def reclass_lc(x):
+    return reclass_map.get(int(x), 0)  # default 0 = no data
+
+land_reclass = xr.apply_ufunc(
+    np.vectorize(reclass_lc),
+    land_2d,
+    dask="parallelized",
+    output_dtypes=[np.uint8]
+)
+# --- Pick classes ---
+lc_classes = {
+    'Broadleaf Forest': 1,
+    'Needleleaf/Mixed Forest': 2,
+    'Shrubland': 3,
+    'Grassland': 4,
+    'Mosaic Vegetation': 5,
+    'Cropland': 6,
+}
+
+regions = {}
+for name, code in lc_classes.items():
+    mask = (land_reclass == code)
+    regions[name] = mask.values
+# --- Add old ocean mask ---
+regions['Ocean'] = ocean_mask  # your previous ocean mask
+regions['Broadleaf_Tropics'] = tropics_mask & regions['Broadleaf Forest'] # your previous ocean mask
 
 # ---------------------- 
 # Functions to compute stats
@@ -194,11 +289,11 @@ def plot_annual_boxplots(all_stats, years, var_name, compare_name,
                          dpi=300):
     n_years = len(years)
     n_regions = len(all_stats)
-    width = 0.13
+    width = 0.1
     positions_base = np.arange(n_years)
 
     if regions_colors is None:
-        regions_colors = ['lightblue','orange','green','red','purple','cyan','gold']
+        regions_colors = ['lightblue','orange','green','red','purple','cyan','gold', 'navy']
 
     # create legend handles
     handles = [mpatches.Patch(facecolor=c, label=name, alpha=0.6)
@@ -207,7 +302,7 @@ def plot_annual_boxplots(all_stats, years, var_name, compare_name,
     # -----------------------------
     # Create figure with 2 subplots
     # -----------------------------
-    fig, axes = plt.subplots(2, 1, figsize=(14, 12), dpi=dpi, sharex=True)
+    fig, axes = plt.subplots(2, 1, figsize=(11, 9), dpi=dpi, sharex=True)
     var_list = [var_name, compare_name]
 
     # Compute global y-limits
@@ -228,14 +323,14 @@ def plot_annual_boxplots(all_stats, years, var_name, compare_name,
                        medianprops=dict(color='black'),
                        labels=['' for _ in range(n_years)])
         ax.set_title(title_var)
-        ax.set_ylabel('XCO₂ [ppm]')
+        ax.set_ylabel('XCO₂ [ppm]', fontsize=12)
         ax.grid(True)
         ax.set_ylim(global_min, global_max)
 
     # x-axis labels
     axes[-1].set_xticks(positions_base)
     axes[-1].set_xticklabels(years, rotation=45)
-    axes[-1].set_xlabel('Year')
+    axes[-1].set_xlabel('Year', fontsize=12)
 
     # legend
     axes[0].legend(handles=handles, title='Region')
@@ -250,14 +345,14 @@ plot_annual_boxplots(all_stats, years,
                      var_name='mean_obs', compare_name='mean_model',
                      title_vars=('Obs XCO₂', 'Model XCO₂'),
                      figure_title='Obs vs Model Annual XCO₂',
-                     save_path='annual_obs_model.png')
+                     save_path='annual_obs_model_lc.png')
 
 # Corrected vs Model
 plot_annual_boxplots(all_stats, years,
                      var_name='mean_corr', compare_name='mean_model',
                      title_vars=('Corrected Obs XCO₂', 'Model XCO₂'),
                      figure_title='Corrected Obs vs Model Annual XCO₂',
-                     save_path='annual_corr_model.png')
+                     save_path='annual_corr_model_lc.png')
 
 
 
@@ -265,7 +360,7 @@ def plot_stats_bar(all_stats, years, metrics_keys, titles, colors, filename, com
 
     n_years = len(years)
     n_regions = len(all_stats)
-    width = 0.13  # bar width
+    width = 0.1  # bar width
 
     fig, axes = plt.subplots(len(metrics_keys), 1, figsize=(12,16), dpi=300, sharex=True)
 
@@ -295,7 +390,7 @@ def plot_stats_bar(all_stats, years, metrics_keys, titles, colors, filename, com
 # ----------------------
 metrics_keys_obs = ['bias','rmse','crmse','corr']
 titles = ['Bias [ppm]','RMSE [ppm]','cRMSE [ppm]','Correlation']
-colors = ['lightblue','orange','green','red','purple','cyan','gold']
+colors = ['lightblue','orange','green','red','purple','cyan','gold', 'navy']
 
 plot_stats_bar(
     all_stats=all_stats,
@@ -303,7 +398,7 @@ plot_stats_bar(
     metrics_keys=metrics_keys_obs,
     titles=titles,
     colors=colors,
-    filename='/exports/geos.ed.ac.uk/palmer_group/oco2_sample_v11r/plotting_scripts/annual_stats_model_vs_obs.png',
+    filename='/exports/geos.ed.ac.uk/palmer_group/oco2_sample_v11r/plotting_scripts/annual_stats_model_vs_obs_lc.png',
     comparison_label='Model vs Obs'
 )
 
@@ -318,7 +413,7 @@ plot_stats_bar(
     metrics_keys=metrics_keys_corr,
     titles=titles,
     colors=colors,
-    filename='/exports/geos.ed.ac.uk/palmer_group/oco2_sample_v11r/plotting_scripts/annual_stats_model_vs_corrected.png',
+    filename='/exports/geos.ed.ac.uk/palmer_group/oco2_sample_v11r/plotting_scripts/annual_stats_model_vs_corrected_lc.png',
     comparison_label='Model vs Corrected Obs'
 )
 
@@ -403,14 +498,14 @@ def taylor_diagram(all_stats, years, colors, filename, comparison='Model vs Obs'
     plt.close(fig)
 
 
-colors = ['lightblue','orange','green','red','purple','cyan','gold']
+colors = ['lightblue','orange','green','red','purple','cyan','gold', 'navy']
 
 # Taylor diagram for Model vs Obs
 taylor_diagram(
     all_stats=all_stats,
     years=years,
     colors=colors,
-    filename='/exports/geos.ed.ac.uk/palmer_group/oco2_sample_v11r/plotting_scripts/taylor_model_vs_obs.png',
+    filename='/exports/geos.ed.ac.uk/palmer_group/oco2_sample_v11r/plotting_scripts/taylor_model_vs_obs_lc.png',
     comparison='Model vs Obs'
 )
 
@@ -419,6 +514,36 @@ taylor_diagram(
     all_stats=all_stats,
     years=years,
     colors=colors,
-    filename='/exports/geos.ed.ac.uk/palmer_group/oco2_sample_v11r/plotting_scripts/taylor_model_vs_corrected.png',
+    filename='/exports/geos.ed.ac.uk/palmer_group/oco2_sample_v11r/plotting_scripts/taylor_model_vs_corrected_lc.png',
     comparison='Model vs Corrected Obs'
 )
+
+
+
+
+# Create empty array
+lc_map = np.zeros_like(land_reclass, dtype=np.uint8)
+region_names = list(regions.keys())
+# Fill lc_map with region indices
+for idx, name in enumerate(region_names, start=1):
+    lc_map[regions[name]] = idx
+
+# Create colormap
+cmap = plt.matplotlib.colors.ListedColormap(colors)
+bounds = np.arange(1, len(region_names)+2)
+norm = plt.matplotlib.colors.BoundaryNorm(bounds, cmap.N)
+
+# Plot
+fig, ax = plt.subplots(figsize=(12,6))
+im = ax.imshow(lc_map, origin='lower', interpolation='nearest', cmap=cmap, norm=norm,
+               extent=[lon.min(), lon.max(), lat.min(), lat.max()])
+
+# Legend
+patches = [mpatches.Patch(color=color, label=name) for color, name in zip(colors, region_names)]
+ax.legend(handles=patches, bbox_to_anchor=(1.05, 1), loc='upper left')
+
+ax.set_xlabel('Longitude')
+ax.set_ylabel('Latitude')
+ax.set_title('Global Land Cover / Region Classes')
+plt.tight_layout()
+plt.savefig('LC_map.png')
